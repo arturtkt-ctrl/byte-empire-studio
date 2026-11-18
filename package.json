@@ -1,0 +1,9 @@
+{
+  "name": "byte-empire-studio",
+  "private": true,
+  "type": "module",
+  "description": "Rec et Cut : tournage et montage automatiques des vidéos de Byte Empire",
+  "dependencies": {
+    "playwright": "1.63.0"
+  }
+}

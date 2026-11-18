@@ -1,0 +1,72 @@
+name: Production vidéo (Rec + Cut)
+
+on:
+  workflow_dispatch:
+    inputs:
+      code:
+        description: "Code de la vidéo dans le calendrier (ex. V001)"
+        required: true
+      scene:
+        description: "Scène à filmer (orbit, firsthour, trade, lab, league, renaissance, guild, tour)"
+        required: true
+        default: orbit
+      hook:
+        description: "Texte d'accroche affiché les 3 premières secondes"
+        required: true
+      max_seconds:
+        description: "Durée maximale"
+        required: false
+        default: "40"
+
+permissions:
+  contents: write
+
+concurrency:
+  group: production-${{ inputs.code }}
+  cancel-in-progress: false
+
+jobs:
+  produire:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: Outils
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq ffmpeg jq fonts-dejavu-core
+          npm install --no-audit --no-fund
+          npx playwright install --with-deps chromium
+      - name: Rec filme
+        env:
+          SCENE: ${{ inputs.scene }}
+        run: node capture.mjs --scene "$SCENE" --dir rush
+      - name: Cut monte (et Vigie contrôle le format)
+        env:
+          HOOK: ${{ inputs.hook }}
+          CODE: ${{ inputs.code }}
+          MAXS: ${{ inputs.max_seconds }}
+        run: |
+          [[ "$CODE" =~ ^V[0-9]{3,5}$ ]] || { echo "Code invalide"; exit 1; }
+          chmod +x montage.sh
+          ./montage.sh rush "$HOOK" "$CODE.mp4" "$MAXS"
+      - name: Publie le fichier en release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          HOOK: ${{ inputs.hook }}
+          CODE: ${{ inputs.code }}
+          SCENE: ${{ inputs.scene }}
+        run: |
+          TAG="$CODE-$GITHUB_RUN_ID"
+          gh release create "$TAG" "$CODE.mp4" --title "$CODE · $SCENE" --notes "Scène $SCENE · accroche : $HOOK"
+          echo "URL=https://github.com/$GITHUB_REPOSITORY/releases/download/$TAG/$CODE.mp4" >> "$GITHUB_STEP_SUMMARY"
+      - name: Garde les rushs 3 jours en cas de souci
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: rush-${{ inputs.code }}
+          path: rush/
+          retention-days: 3
